@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>לימוד ערבית - Arabic Learning</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }
+        h1 { color: #333; margin-bottom: 20px; text-align: center; }
+        h2 { color: #555; margin: 20px 0 10px 0; }
+        h3 { color: #444; margin-bottom: 10px; }
+        .section { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input, textarea, select, button { font-size: 16px; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; }
+        input, select { width: 100%; }
+        textarea { width: 100%; min-height: 150px; font-family: monospace; direction: ltr; text-align: right; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; padding: 12px 20px; font-weight: bold; transition: 0.2s; }
+        button:hover { background-color: #45a049; }
+        button.secondary { background-color: #008CBA; }
+        button.secondary:hover { background-color: #007399; }
+        button.danger { background-color: #f44336; }
+        button.danger:hover { background-color: #da190b; }
+        
+        .import-box { background-color: #e8f5e9; border: 2px dashed #4CAF50; padding: 15px; border-radius: 8px; margin: 20px 0; text-align: center; }
+        .import-box input[type="file"] { background: white; cursor: pointer; }
+        
+        /* Flashcards Styles */
+        .flashcard { width: 100%; height: 300px; background-color: white; border: 2px solid #4CAF50; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 32px; cursor: pointer; margin: 20px 0; transition: transform 0.3s; text-align: center; padding: 20px; }
+        .flashcard:hover { transform: scale(1.02); }
+        .transliteration-text { font-size: 22px; color: #666; margin-top: 15px; font-weight: normal; }
+        
+        /* Quiz Styles */
+        .quiz-header { display: flex; justify-content: space-between; font-size: 22px; font-weight: bold; margin: 10px 0; padding: 10px; background: #fff; border-radius: 8px; border: 2px solid #eee; }
+        .quiz-timer { color: #d32f2f; display: flex; align-items: center; gap: 8px; }
+        .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 20px 0; }
+        .quiz-option { padding: 15px; font-size: 22px; background-color: #e7e7e7; border: 2px solid #ddd; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100px; }
+        .quiz-option:hover { background-color: #d0d0d0; }
+        .quiz-option.correct { background-color: #4CAF50; color: white; border-color: #4CAF50; }
+        .quiz-option.wrong { background-color: #f44336; color: white; border-color: #f44336; }
+        .quiz-word { font-size: 32px; text-align: center; margin: 20px 0; padding: 30px; background-color: #f0f0f0; border-radius: 8px; border: 2px solid #ddd; }
+        .quiz-prompt-transliteration { font-size: 22px; color: #555; margin-top: 15px; }
+        
+        /* Memory Game Styles */
+        .memory-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; margin: 20px 0; }
+        .memory-card { height: 140px; perspective: 1000px; cursor: pointer; }
+        .memory-card-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
+        .memory-card.flipped .memory-card-inner { transform: rotateY(180deg); }
+        .memory-card.matched .memory-card-inner { transform: rotateY(180deg); cursor: default; }
+        .memory-card.matched .memory-card-back { background-color: #d4edda; border-color: #28a745; box-shadow: 0 0 10px rgba(40,167,69,0.3); }
+        .memory-card-front, .memory-card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1); padding: 10px; }
+        .memory-card-front { background-color: #4CAF50; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.1) 10px, rgba(255,255,255,.1) 20px); }
+        .memory-card-back { background-color: white; border: 2px solid #4CAF50; transform: rotateY(180deg); font-size: 20px; font-weight: bold; transition: background-color 0.4s, border-color 0.4s; }
+        .memory-transliteration { font-size: 14px; color: #666; margin-top: 8px; font-weight: normal; }
+
+        .score { text-align: center; font-size: 20px; margin: 10px 0; font-weight: bold; }
+        .hidden { display: none !important; }
+        .button-group { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+        .button-group button { flex: 1; min-width: 120px; }
+        
+        .nikud-btn { padding: 8px 4px; font-size: 14px; background-color: #3f5599; color: white; border: 1px solid #ccc; cursor: pointer; text-align: center; }
+        .nikud-btn:hover { background-color: #2c3e75; }
+    </style>
+</head>
+<body>
+    <h1>לימוד ערבית</h1>
+    
+    <div id="mainMenu" class="section">
+        <h2>תפריט ראשי</h2>
+        <div class="button-group">
+            <button onclick="showSection('manageListsSection')">ניהול רשימות</button>
+            <button onclick="showSection('flashcardsSection')" class="secondary">כרטיסיות</button>
+            <button onclick="showSection('quizSection')" class="secondary" style="background-color: #ff9800;">אתגר 60 שניות</button>
+            <button onclick="showSection('memorySection')" class="secondary" style="background-color: #9c27b0;">זיכרון</button>
+        </div>
+    </div>
+    
+    <div id="manageListsSection" class="section hidden">
+        <h2>ניהול רשימות מילים</h2>
+        
+        <div class="import-box">
+            <h3>📥 ייבוא מילים מקובץ מדרסה (JSON)</h3>
+            <input type="text" id="jsonListName" placeholder="בחר שם לרשימה החדשה">
+            <input type="file" id="jsonFileInput" accept=".json">
+            <button onclick="importJsonList()" style="width: 100%; margin-top: 10px;">ייבא נתונים למשחק</button>
+        </div>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ddd;">
+        
+        <div style="margin: 20px 0;">
+            <h3>יצירה ידנית של רשימה:</h3>
+            <input type="text" id="newListName" placeholder="שם לרשימה החדשה">
+            <button onclick="createNewList()">צור רשימה ידנית</button>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <label>בחר רשימה קיימת לעריכה:</label>
+            <select id="listSelector" onchange="loadListForEditing()">
+                <option value="">-- בחר רשימה --</option>
+            </select>
+        </div>
+        
+        <div id="editListSection" class="hidden">
+            <h3>עריכת רשימה: <span id="currentListName" style="color: #4CAF50;"></span></h3>
+            <p style="margin-bottom: 5px;">הכנס זוגות מילים בפורמט: עברית - ערבית - תעתיק</p>
+            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">(התעתיק אופציונלי. לרדת שורה בין כל מילה)</p>
+            <textarea id="wordListInput" placeholder="שָׁלוֹם - مرحبا - מַרְחַבַּא"></textarea>
+            
+            <div class="button-group">
+                <button onclick="saveWordList()">שמור שינויים</button>
+                <button onclick="deleteCurrentList()" class="danger">מחק רשימה</button>
+            </div>
+        </div>
+        <button onclick="showSection('mainMenu')" style="margin-top: 20px; width: 100%;" class="secondary">חזור לתפריט</button>
+    </div>
+    
+    <div id="flashcardsSection" class="section hidden">
+        <h2>משחק כרטיסיות</h2>
+        <div style="margin: 20px 0;">
+            <select id="flashcardListSelector" onchange="startFlashcards()">
+                <option value="">-- בחר רשימה --</option>
+            </select>
+        </div>
+        <div id="flashcardGame" class="hidden">
+            <div class="score">כרטיסייה <span id="cardNumber">1</span> מתוך <span id="totalCards">0</span></div>
+            <div id="flashcard" class="flashcard" onclick="flipCard()"></div>
+            <div class="button-group">
+                <button onclick="previousCard()">← הקודם</button>
+                <button onclick="nextCard()">הבא →</button>
+            </div>
+            <button onclick="shuffleCards()" class="secondary" style="width: 100%; margin-top: 10px;">ערבב</button>
+        </div>
+        <button onclick="showSection('mainMenu')" style="margin-top: 20px; width: 100%;" class="secondary">חזור לתפריט</button>
+    </div>
+    
+    <div id="quizSection" class="section hidden">
+        <h2>משחק התאמה: אתגר 60 שניות</h2>
+        <div style="margin: 20px 0;" id="quizListSelectorContainer">
+            <select id="quizListSelector" onchange="startQuiz()">
+                <option value="">-- בחר רשימה --</option>
+            </select>
+        </div>
+        
+        <div id="quizGame" class="hidden">
+            <div class="quiz-header">
+                <div>ניקוד: <span id="score" style="color: #4CAF50;">0</span></div>
+                <div class="quiz-timer">⏱️ <span id="timeLeft">60</span> שניות</div>
+            </div>
+            <div class="quiz-word" id="quizWord"></div>
+            <div class="quiz-options" id="quizOptions"></div>
+        </div>
+        <button onclick="showSection('mainMenu')" style="margin-top: 20px; width: 100%;" class="secondary">חזור לתפריט</button>
+    </div>
+
+    <div id="memorySection" class="section hidden">
+        <h2>משחק זיכרון</h2>
+        <div style="margin: 20px 0;">
+            <select id="memoryListSelector" onchange="startMemory()">
+                <option value="">-- בחר רשימה --</option>
+            </select>
+        </div>
+        <div id="memoryGame" class="hidden">
+            <div class="score">זוגות שנמצאו: <span id="memoryScore">0</span> / <span id="memoryTotal">0</span></div>
+            <div class="memory-board" id="memoryBoard"></div>
+            <button onclick="startMemory()" class="secondary" style="width: 100%; margin-top: 20px;">התחל מחדש</button>
+        </div>
+        <button onclick="showSection('mainMenu')" style="margin-top: 20px; width: 100%;" class="secondary">חזור לתפריט</button>
+    </div>
+
+    <script>
+        let wordLists = {};
+        let currentListName = '';
+        let quizTimerInterval; // משתנה גלובלי לטיימר כדי שנוכל לעצור אותו
+        
+        window.onload = function() {
+            loadAllLists();
+            updateListSelectors();
+        };
+
+        function loadAllLists() {
+            const saved = localStorage.getItem('arabicWordLists');
+            if (saved) wordLists = JSON.parse(saved);
+        }
+
+        function saveAllLists() {
+            localStorage.setItem('arabicWordLists', JSON.stringify(wordLists));
+        }
+
+        function updateListSelectors() {
+            const listNames = Object.keys(wordLists);
+            const selectors = ['listSelector', 'flashcardListSelector', 'quizListSelector', 'memoryListSelector'];
+            
+            selectors.forEach(selectorId => {
+                const selector = document.getElementById(selectorId);
+                selector.innerHTML = '<option value="">-- בחר רשימה --</option>';
+                listNames.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    selector.appendChild(option);
+                });
+            });
+        }
+
+        function showSection(sectionId) {
+            // עוצרים את הטיימר אם יוצאים מהמשחק באמצע
+            if (quizTimerInterval) clearInterval(quizTimerInterval);
+            
+            const sections = ['mainMenu', 'manageListsSection', 'flashcardsSection', 'quizSection', 'memorySection'];
+            sections.forEach(id => document.getElementById(id).classList.add('hidden'));
+            document.getElementById(sectionId).classList.remove('hidden');
+            
+            // איפוס בחירת רשימה במשחק ההתאמה כשיוצאים וחוזרים
+            if(sectionId !== 'quizSection') {
+                document.getElementById('quizListSelector').value = "";
+                document.getElementById('quizGame').classList.add('hidden');
+                document.getElementById('quizListSelectorContainer').classList.remove('hidden');
+            }
+        }
+
+        function importJsonList() {
+            const fileInput = document.getElementById('jsonFileInput');
+            const nameInput = document.getElementById('jsonListName');
+            const listName = nameInput.value.trim();
+
+            if (!listName) return alert('אנא הכנס שם לרשימה');
+            if (wordLists[listName]) return alert('רשימה בשם זה כבר קיימת');
+            if (!fileInput.files.length) return alert('אנא בחר/י קובץ JSON');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    wordLists[listName] = JSON.parse(e.target.result); 
+                    saveAllLists();
+                    updateListSelectors();
+                    alert('הרשימה יובאה בהצלחה!');
+                    nameInput.value = ''; fileInput.value = '';
+                } catch (error) {
+                    alert('שגיאה בקריאת הקובץ.');
+                }
+            };
+            reader.readAsText(fileInput.files[0]);
+        }
+
+        function createNewList() {
+            const nameInput = document.getElementById('newListName');
+            const name = nameInput.value.trim();
+            if (!name || wordLists[name]) return alert('שם לא חוקי או קיים');
+            wordLists[name] = [];
+            saveAllLists(); updateListSelectors(); nameInput.value = '';
+            document.getElementById('listSelector').value = name;
+            loadListForEditing();
+        }
+
+        function loadListForEditing() {
+            const listName = document.getElementById('listSelector').value;
+            if (!listName) return document.getElementById('editListSection').classList.add('hidden');
+            currentListName = listName;
+            document.getElementById('currentListName').textContent = listName;
+            document.getElementById('editListSection').classList.remove('hidden');
+            
+            document.getElementById('wordListInput').value = wordLists[listName].map(item => {
+                if (typeof item === 'object') {
+                    return item.transliteration ? `${item.hebrew} - ${item.arabic} - ${item.transliteration}` : `${item.hebrew} - ${item.arabic}`;
+                }
+                return item; 
+            }).join('\n');
+        }
+
+        function saveWordList() {
+            if (!currentListName) return;
+            const lines = document.getElementById('wordListInput').value.split('\n').filter(line => line.trim());
+            wordLists[currentListName] = lines.map(line => {
+                const parts = line.split('-').map(s => s.trim());
+                return { hebrew: parts[0]||'', arabic: parts[1]||'', transliteration: parts[2]||'' };
+            }).filter(item => item.hebrew && item.arabic);
+            saveAllLists(); alert('נשמר!');
+        }
+
+        function deleteCurrentList() {
+            if (!currentListName) return;
+            if (confirm(`למחוק את "${currentListName}"?`)) {
+                delete wordLists[currentListName];
+                saveAllLists(); updateListSelectors();
+                document.getElementById('editListSection').classList.add('hidden');
+                currentListName = '';
+            }
+        }
+
+        function parseWordPair(item) {
+            if (typeof item === 'object' && item !== null) return item;
+            if (typeof item === 'string') {
+                const parts = item.split('-').map(s => s.trim());
+                if (parts.length >= 2) return { hebrew: parts[0], arabic: parts[1], transliteration: parts[2]||'' };
+            }
+            return null;
+        }
+
+        /* --- Flashcards Logic --- */
+        let flashcardData = [], currentCardIndex = 0, isFlipped = false;
+        function startFlashcards() {
+            const listName = document.getElementById('flashcardListSelector').value;
+            if (!listName) return document.getElementById('flashcardGame').classList.add('hidden');
+            flashcardData = wordLists[listName].map(parseWordPair).filter(p => p !== null);
+            if (!flashcardData.length) return alert('רשימה ריקה');
+            currentCardIndex = 0; isFlipped = false;
+            document.getElementById('flashcardGame').classList.remove('hidden');
+            document.getElementById('totalCards').textContent = flashcardData.length;
+            showCard();
+        }
+
+        function showCard() {
+            if (!flashcardData.length) return;
+            const card = flashcardData[currentCardIndex];
+            document.getElementById('cardNumber').textContent = currentCardIndex + 1;
+            const div = document.getElementById('flashcard');
+            if (!isFlipped) {
+                div.innerHTML = `<span>${card.hebrew}</span>`;
+            } else {
+                div.innerHTML = `<span>${card.arabic}</span>${card.transliteration ? `<div class="transliteration-text">${card.transliteration}</div>` : ''}`;
+            }
+        }
+
+        function flipCard() { isFlipped = !isFlipped; showCard(); }
+        function nextCard() { currentCardIndex = (currentCardIndex + 1) % flashcardData.length; isFlipped = false; showCard(); }
+        function previousCard() { currentCardIndex = (currentCardIndex - 1 + flashcardData.length) % flashcardData.length; isFlipped = false; showCard(); }
+        function shuffleCards() { flashcardData.sort(() => Math.random() - 0.5); currentCardIndex = 0; isFlipped = false; showCard(); }
+
+        /* --- Quiz Logic (Time Attack & Reversed) --- */
+        let quizData = [], currentQuizPair = null, score = 0, answered = false, timeLeft = 60;
+        
+        function startQuiz() {
+            const listName = document.getElementById('quizListSelector').value;
+            if (!listName) return document.getElementById('quizGame').classList.add('hidden');
+            quizData = wordLists[listName].map(parseWordPair).filter(p => p !== null);
+            if (quizData.length < 2) return alert('צריך לפחות 2 זוגות מילים למשחק זה');
+            
+            // איפוס נתונים
+            score = 0;
+            timeLeft = 60;
+            answered = false;
+            if (quizTimerInterval) clearInterval(quizTimerInterval);
+            
+            // עדכון תצוגה
+            document.getElementById('score').textContent = score;
+            document.getElementById('timeLeft').textContent = timeLeft;
+            document.getElementById('quizGame').classList.remove('hidden');
+            document.getElementById('quizListSelectorContainer').classList.add('hidden'); // מסתירים את בחירת הרשימה בזמן משחק
+            
+            // הפעלת שעון
+            quizTimerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('timeLeft').textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    endQuiz();
+                }
+            }, 1000);
+            
+            showNextQuizQuestion();
+        }
+
+        function showNextQuizQuestion() {
+            if (timeLeft <= 0) return;
+            answered = false;
+            
+            // בוחרים מילה רנדומלית מכל הרשימה ללא הגבלה
+            currentQuizPair = quizData[Math.floor(Math.random() * quizData.length)];
+            
+            // מציגים את הערבית והתעתיק בתור השאלה
+            document.getElementById('quizWord').innerHTML = `
+                <div>${currentQuizPair.arabic}</div>
+                <div class="quiz-prompt-transliteration">${currentQuizPair.transliteration || ''}</div>
+            `;
+            
+            const wrongAnswers = [];
+            // מחפשים תשובות שגויות בעברית
+            while (wrongAnswers.length < Math.min(3, quizData.length - 1)) {
+                const randomPair = quizData[Math.floor(Math.random() * quizData.length)];
+                if (randomPair.hebrew !== currentQuizPair.hebrew && !wrongAnswers.find(w => w.hebrew === randomPair.hebrew)) {
+                    wrongAnswers.push(randomPair);
+                }
+            }
+            
+            const allAnswers = [currentQuizPair, ...wrongAnswers].sort(() => Math.random() - 0.5);
+            const optionsDiv = document.getElementById('quizOptions');
+            optionsDiv.innerHTML = '';
+            
+            // כפתורי תשובות בעברית
+            allAnswers.forEach(pair => {
+                const button = document.createElement('button');
+                button.className = 'quiz-option';
+                button.textContent = pair.hebrew;
+                button.onclick = () => checkQuizAnswer(pair.hebrew, button);
+                optionsDiv.appendChild(button);
+            });
+        }
+
+        function checkQuizAnswer(selectedHebrew, button) {
+            if (answered) return;
+            answered = true;
+            const allButtons = document.querySelectorAll('.quiz-option');
+            
+            if (selectedHebrew === currentQuizPair.hebrew) {
+                button.classList.add('correct'); 
+                score++;
+                document.getElementById('score').textContent = score;
+            } else {
+                button.classList.add('wrong');
+                // הדגשת התשובה הנכונה
+                allButtons.forEach(btn => { 
+                    if (btn.textContent === currentQuizPair.hebrew) btn.classList.add('correct'); 
+                });
+            }
+            
+            // ביטול הלחיצה על שאר הכפתורים
+            allButtons.forEach(btn => btn.onclick = null);
+            
+            // מעבר אוטומטי לשאלה הבאה אחרי חצי שנייה
+            setTimeout(() => {
+                if (timeLeft > 0) {
+                    showNextQuizQuestion();
+                }
+            }, 600);
+        }
+
+        function endQuiz() {
+            clearInterval(quizTimerInterval);
+            document.getElementById('quizWord').innerHTML = `
+                <div style="font-size: 40px; margin-bottom: 10px;">⏳</div>
+                <div>נגמר הזמן!</div>
+                <div style="font-size: 24px; color: #4CAF50; margin-top: 15px;">הניקוד הסופי שלך: ${score}</div>
+            `;
+            document.getElementById('quizOptions').innerHTML = '';
+            
+            const restartBtn = document.createElement('button');
+            restartBtn.textContent = 'שחק שוב';
+            restartBtn.className = 'secondary';
+            restartBtn.style.gridColumn = "1 / -1"; // מותח את הכפתור על כל הרוחב
+            restartBtn.onclick = startQuiz;
+            
+            const changeListBtn = document.createElement('button');
+            changeListBtn.textContent = 'החלף רשימה';
+            changeListBtn.style.gridColumn = "1 / -1";
+            changeListBtn.onclick = () => {
+                document.getElementById('quizGame').classList.add('hidden');
+                document.getElementById('quizListSelectorContainer').classList.remove('hidden');
+            };
+            
+            document.getElementById('quizOptions').appendChild(restartBtn);
+            document.getElementById('quizOptions').appendChild(changeListBtn);
+        }
+
+        /* --- Memory Game Logic --- */
+        let memoryCards = [], firstCard = null, secondCard = null, lockBoard = false, matchesFound = 0;
+        
+        function startMemory() {
+            const listName = document.getElementById('memoryListSelector').value;
+            if (!listName) return document.getElementById('memoryGame').classList.add('hidden');
+            
+            let data = wordLists[listName].map(parseWordPair).filter(p => p !== null);
+            if (data.length < 2) return alert('צריך לפחות 2 זוגות למשחק');
+            
+            data.sort(() => Math.random() - 0.5);
+            data = data.slice(0, 8); 
+            
+            matchesFound = 0;
+            document.getElementById('memoryScore').textContent = '0';
+            document.getElementById('memoryTotal').textContent = data.length;
+            document.getElementById('memoryGame').classList.remove('hidden');
+            
+            memoryCards = [];
+            data.forEach((pair, index) => {
+                memoryCards.push({ id: index, type: 'hebrew', content: pair.hebrew });
+                memoryCards.push({ id: index, type: 'arabic', content: pair.arabic, trans: pair.transliteration });
+            });
+            
+            memoryCards.sort(() => Math.random() - 0.5);
+            renderMemoryBoard();
+        }
+
+        function renderMemoryBoard() {
+            const board = document.getElementById('memoryBoard');
+            board.innerHTML = '';
+            
+            memoryCards.forEach((card, index) => {
+                const cardElement = document.createElement('div');
+                cardElement.className = 'memory-card';
+                cardElement.dataset.index = index;
+                
+                let backContent = card.type === 'hebrew' ? card.content : 
+                    `<div>${card.content}</div><div class="memory-transliteration">${card.trans || ''}</div>`;
+
+                cardElement.innerHTML = `
+                    <div class="memory-card-inner">
+                        <div class="memory-card-front"></div>
+                        <div class="memory-card-back">${backContent}</div>
+                    </div>
+                `;
+                
+                cardElement.addEventListener('click', flipMemoryCard);
+                board.appendChild(cardElement);
+            });
+        }
+
+        function flipMemoryCard() {
+            if (lockBoard) return;
+            if (this === firstCard) return;
+
+            this.classList.add('flipped');
+
+            if (!firstCard) {
+                firstCard = this;
+                return;
+            }
+
+            secondCard = this;
+            checkForMatch();
+        }
+
+        function checkForMatch() {
+            const index1 = firstCard.dataset.index;
+            const index2 = secondCard.dataset.index;
+            
+            const isMatch = memoryCards[index1].id === memoryCards[index2].id;
+
+            isMatch ? disableCards() : unflipCards();
+        }
+
+        function disableCards() {
+            firstCard.removeEventListener('click', flipMemoryCard);
+            secondCard.removeEventListener('click', flipMemoryCard);
+            
+            const card1 = firstCard;
+            const card2 = secondCard;
+            
+            setTimeout(() => {
+                card1.classList.add('matched');
+                card2.classList.add('matched');
+                
+                matchesFound++;
+                document.getElementById('memoryScore').textContent = matchesFound;
+                
+                if (matchesFound === memoryCards.length / 2) {
+                    setTimeout(() => alert('כל הכבוד! סיימת את משחק הזיכרון!'), 500);
+                }
+            }, 400); 
+            
+            resetBoard();
+        }
+
+        function unflipCards() {
+            lockBoard = true;
+            setTimeout(() => {
+                firstCard.classList.remove('flipped');
+                secondCard.classList.remove('flipped');
+                resetBoard();
+            }, 1200); 
+        }
+
+        function resetBoard() {
+            [firstCard, secondCard, lockBoard] = [null, null, false];
+        }
+    </script>
+</body>
+</html>
