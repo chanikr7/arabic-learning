@@ -75,13 +75,13 @@
     </div>
     
     <div id="manageListsSection" class="section hidden">
-        <h2>ניהול רשימות מילים</h2>
+        <h2>ניהול רשימות מילים (מסונכרן לענן)</h2>
         
         <div class="import-box">
             <h3>📥 ייבוא מילים מקובץ מדרסה (JSON)</h3>
             <input type="text" id="jsonListName" placeholder="בחר שם לרשימה החדשה">
             <input type="file" id="jsonFileInput" accept=".json">
-            <button onclick="importJsonList()" style="width: 100%; margin-top: 10px;">ייבא נתונים למשחק</button>
+            <button onclick="importJsonList()" style="width: 100%; margin-top: 10px;">ייבא נתונים לענן</button>
         </div>
 
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #ddd;">
@@ -102,12 +102,11 @@
         <div id="editListSection" class="hidden">
             <h3>עריכת רשימה: <span id="currentListName" style="color: #4CAF50;"></span></h3>
             <p style="margin-bottom: 5px;">הכנס זוגות מילים בפורמט: עברית - ערבית - תעתיק</p>
-            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">(התעתיק אופציונלי. לרדת שורה בין כל מילה)</p>
             <textarea id="wordListInput" placeholder="שָׁלוֹם - مرحبا - מַרְחַבַּא"></textarea>
             
             <div class="button-group">
-                <button onclick="saveWordList()">שמור שינויים</button>
-                <button onclick="deleteCurrentList()" class="danger">מחק רשימה</button>
+                <button onclick="saveWordList()">שמור שינויים בענן</button>
+                <button onclick="deleteCurrentList()" class="danger">מחק רשימה מהענן</button>
             </div>
         </div>
         <button onclick="showSection('mainMenu')" style="margin-top: 20px; width: 100%;" class="secondary">חזור לתפריט</button>
@@ -166,24 +165,73 @@
         <button onclick="showSection('mainMenu')" style="margin-top: 20px; width: 100%;" class="secondary">חזור לתפריט</button>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <script>
+        // === הגדרות חיבור ל-Supabase ===
+        const supabaseUrl = 'https://okeuenzucpidgqmdsueu.supabase.co';
+        const supabaseKey = 'sb_publishable_msl-qmlKE9CKABeByvVAQg_gJHZeDpT';
+        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
         let wordLists = {};
         let currentListName = '';
-        let quizTimerInterval; // משתנה גלובלי לטיימר כדי שנוכל לעצור אותו
+        let quizTimerInterval; 
         
-        window.onload = function() {
-            loadAllLists();
+        window.onload = async function() {
+            await loadAllLists();
             updateListSelectors();
         };
 
-        function loadAllLists() {
-            const saved = localStorage.getItem('arabicWordLists');
-            if (saved) wordLists = JSON.parse(saved);
+        // --- פונקציות תקשורת עם Supabase ---
+
+        async function loadAllLists() {
+            console.log("מושך נתונים מהענן...");
+            const { data, error } = await supabaseClient.from('word_lists').select('*');
+            if (error) {
+                console.error("שגיאה בטעינת נתונים מ-Supabase:", error);
+                return;
+            }
+            
+            wordLists = {};
+            data.forEach(row => {
+                wordLists[row.list_name] = row.words;
+            });
         }
 
-        function saveAllLists() {
-            localStorage.setItem('arabicWordLists', JSON.stringify(wordLists));
+        async function saveAllLists() {
+            console.log("שומר נתונים לענן...");
+            const upsertData = Object.keys(wordLists).map(listName => {
+                return { list_name: listName, words: wordLists[listName] };
+            });
+
+            if (upsertData.length === 0) return; // אין מה לשמור
+
+            const { error } = await supabaseClient.from('word_lists').upsert(upsertData, { onConflict: 'list_name' });
+            if (error) {
+                console.error("שגיאה בשמירת נתונים:", error);
+                alert('הייתה שגיאה בשמירה לענן.');
+            }
         }
+
+        async function deleteCurrentList() {
+            if (!currentListName) return;
+            if (confirm(`למחוק לחלוטין את "${currentListName}" מהענן?`)) {
+                const { error } = await supabaseClient.from('word_lists').delete().eq('list_name', currentListName);
+                
+                if (!error) {
+                    delete wordLists[currentListName];
+                    updateListSelectors();
+                    document.getElementById('editListSection').classList.add('hidden');
+                    currentListName = '';
+                    alert('הרשימה נמחקה מהענן בהצלחה.');
+                } else {
+                    console.error("שגיאה במחיקה:", error);
+                    alert('שגיאה במחיקת הרשימה.');
+                }
+            }
+        }
+
+        // --- שאר הפונקציות (עודכנו להיות אסינכרוניות כשצריך) ---
 
         function updateListSelectors() {
             const listNames = Object.keys(wordLists);
@@ -202,14 +250,11 @@
         }
 
         function showSection(sectionId) {
-            // עוצרים את הטיימר אם יוצאים מהמשחק באמצע
             if (quizTimerInterval) clearInterval(quizTimerInterval);
-            
             const sections = ['mainMenu', 'manageListsSection', 'flashcardsSection', 'quizSection', 'memorySection'];
             sections.forEach(id => document.getElementById(id).classList.add('hidden'));
             document.getElementById(sectionId).classList.remove('hidden');
             
-            // איפוס בחירת רשימה במשחק ההתאמה כשיוצאים וחוזרים
             if(sectionId !== 'quizSection') {
                 document.getElementById('quizListSelector').value = "";
                 document.getElementById('quizGame').classList.add('hidden');
@@ -217,7 +262,7 @@
             }
         }
 
-        function importJsonList() {
+        async function importJsonList() {
             const fileInput = document.getElementById('jsonFileInput');
             const nameInput = document.getElementById('jsonListName');
             const listName = nameInput.value.trim();
@@ -227,12 +272,12 @@
             if (!fileInput.files.length) return alert('אנא בחר/י קובץ JSON');
 
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 try {
                     wordLists[listName] = JSON.parse(e.target.result); 
-                    saveAllLists();
+                    await saveAllLists(); // ממתינים לשמירה מול Supabase
                     updateListSelectors();
-                    alert('הרשימה יובאה בהצלחה!');
+                    alert('הרשימה יובאה בהצלחה ונשמרה בענן!');
                     nameInput.value = ''; fileInput.value = '';
                 } catch (error) {
                     alert('שגיאה בקריאת הקובץ.');
@@ -241,12 +286,14 @@
             reader.readAsText(fileInput.files[0]);
         }
 
-        function createNewList() {
+        async function createNewList() {
             const nameInput = document.getElementById('newListName');
             const name = nameInput.value.trim();
             if (!name || wordLists[name]) return alert('שם לא חוקי או קיים');
             wordLists[name] = [];
-            saveAllLists(); updateListSelectors(); nameInput.value = '';
+            await saveAllLists(); 
+            updateListSelectors(); 
+            nameInput.value = '';
             document.getElementById('listSelector').value = name;
             loadListForEditing();
         }
@@ -266,24 +313,16 @@
             }).join('\n');
         }
 
-        function saveWordList() {
+        async function saveWordList() {
             if (!currentListName) return;
             const lines = document.getElementById('wordListInput').value.split('\n').filter(line => line.trim());
             wordLists[currentListName] = lines.map(line => {
                 const parts = line.split('-').map(s => s.trim());
                 return { hebrew: parts[0]||'', arabic: parts[1]||'', transliteration: parts[2]||'' };
             }).filter(item => item.hebrew && item.arabic);
-            saveAllLists(); alert('נשמר!');
-        }
-
-        function deleteCurrentList() {
-            if (!currentListName) return;
-            if (confirm(`למחוק את "${currentListName}"?`)) {
-                delete wordLists[currentListName];
-                saveAllLists(); updateListSelectors();
-                document.getElementById('editListSection').classList.add('hidden');
-                currentListName = '';
-            }
+            
+            await saveAllLists(); 
+            alert('השינויים נשמרו בענן!');
         }
 
         function parseWordPair(item) {
@@ -295,7 +334,7 @@
             return null;
         }
 
-        /* --- Flashcards Logic --- */
+        /* --- לוגיקת משחקים --- */
         let flashcardData = [], currentCardIndex = 0, isFlipped = false;
         function startFlashcards() {
             const listName = document.getElementById('flashcardListSelector').value;
@@ -325,7 +364,6 @@
         function previousCard() { currentCardIndex = (currentCardIndex - 1 + flashcardData.length) % flashcardData.length; isFlipped = false; showCard(); }
         function shuffleCards() { flashcardData.sort(() => Math.random() - 0.5); currentCardIndex = 0; isFlipped = false; showCard(); }
 
-        /* --- Quiz Logic (Time Attack & Reversed) --- */
         let quizData = [], currentQuizPair = null, score = 0, answered = false, timeLeft = 60;
         
         function startQuiz() {
@@ -334,25 +372,18 @@
             quizData = wordLists[listName].map(parseWordPair).filter(p => p !== null);
             if (quizData.length < 2) return alert('צריך לפחות 2 זוגות מילים למשחק זה');
             
-            // איפוס נתונים
-            score = 0;
-            timeLeft = 60;
-            answered = false;
+            score = 0; timeLeft = 60; answered = false;
             if (quizTimerInterval) clearInterval(quizTimerInterval);
             
-            // עדכון תצוגה
             document.getElementById('score').textContent = score;
             document.getElementById('timeLeft').textContent = timeLeft;
             document.getElementById('quizGame').classList.remove('hidden');
-            document.getElementById('quizListSelectorContainer').classList.add('hidden'); // מסתירים את בחירת הרשימה בזמן משחק
+            document.getElementById('quizListSelectorContainer').classList.add('hidden'); 
             
-            // הפעלת שעון
             quizTimerInterval = setInterval(() => {
                 timeLeft--;
                 document.getElementById('timeLeft').textContent = timeLeft;
-                if (timeLeft <= 0) {
-                    endQuiz();
-                }
+                if (timeLeft <= 0) endQuiz();
             }, 1000);
             
             showNextQuizQuestion();
@@ -361,18 +392,14 @@
         function showNextQuizQuestion() {
             if (timeLeft <= 0) return;
             answered = false;
-            
-            // בוחרים מילה רנדומלית מכל הרשימה ללא הגבלה
             currentQuizPair = quizData[Math.floor(Math.random() * quizData.length)];
             
-            // מציגים את הערבית והתעתיק בתור השאלה
             document.getElementById('quizWord').innerHTML = `
                 <div>${currentQuizPair.arabic}</div>
                 <div class="quiz-prompt-transliteration">${currentQuizPair.transliteration || ''}</div>
             `;
             
             const wrongAnswers = [];
-            // מחפשים תשובות שגויות בעברית
             while (wrongAnswers.length < Math.min(3, quizData.length - 1)) {
                 const randomPair = quizData[Math.floor(Math.random() * quizData.length)];
                 if (randomPair.hebrew !== currentQuizPair.hebrew && !wrongAnswers.find(w => w.hebrew === randomPair.hebrew)) {
@@ -384,7 +411,6 @@
             const optionsDiv = document.getElementById('quizOptions');
             optionsDiv.innerHTML = '';
             
-            // כפתורי תשובות בעברית
             allAnswers.forEach(pair => {
                 const button = document.createElement('button');
                 button.className = 'quiz-option';
@@ -401,25 +427,14 @@
             
             if (selectedHebrew === currentQuizPair.hebrew) {
                 button.classList.add('correct'); 
-                score++;
-                document.getElementById('score').textContent = score;
+                score++; document.getElementById('score').textContent = score;
             } else {
                 button.classList.add('wrong');
-                // הדגשת התשובה הנכונה
-                allButtons.forEach(btn => { 
-                    if (btn.textContent === currentQuizPair.hebrew) btn.classList.add('correct'); 
-                });
+                allButtons.forEach(btn => { if (btn.textContent === currentQuizPair.hebrew) btn.classList.add('correct'); });
             }
             
-            // ביטול הלחיצה על שאר הכפתורים
             allButtons.forEach(btn => btn.onclick = null);
-            
-            // מעבר אוטומטי לשאלה הבאה אחרי חצי שנייה
-            setTimeout(() => {
-                if (timeLeft > 0) {
-                    showNextQuizQuestion();
-                }
-            }, 600);
+            setTimeout(() => { if (timeLeft > 0) showNextQuizQuestion(); }, 600);
         }
 
         function endQuiz() {
@@ -434,7 +449,7 @@
             const restartBtn = document.createElement('button');
             restartBtn.textContent = 'שחק שוב';
             restartBtn.className = 'secondary';
-            restartBtn.style.gridColumn = "1 / -1"; // מותח את הכפתור על כל הרוחב
+            restartBtn.style.gridColumn = "1 / -1"; 
             restartBtn.onclick = startQuiz;
             
             const changeListBtn = document.createElement('button');
@@ -449,7 +464,6 @@
             document.getElementById('quizOptions').appendChild(changeListBtn);
         }
 
-        /* --- Memory Game Logic --- */
         let memoryCards = [], firstCard = null, secondCard = null, lockBoard = false, matchesFound = 0;
         
         function startMemory() {
@@ -506,22 +520,13 @@
             if (this === firstCard) return;
 
             this.classList.add('flipped');
-
-            if (!firstCard) {
-                firstCard = this;
-                return;
-            }
-
+            if (!firstCard) { firstCard = this; return; }
             secondCard = this;
             checkForMatch();
         }
 
         function checkForMatch() {
-            const index1 = firstCard.dataset.index;
-            const index2 = secondCard.dataset.index;
-            
-            const isMatch = memoryCards[index1].id === memoryCards[index2].id;
-
+            const isMatch = memoryCards[firstCard.dataset.index].id === memoryCards[secondCard.dataset.index].id;
             isMatch ? disableCards() : unflipCards();
         }
 
@@ -556,9 +561,7 @@
             }, 1200); 
         }
 
-        function resetBoard() {
-            [firstCard, secondCard, lockBoard] = [null, null, false];
-        }
+        function resetBoard() { [firstCard, secondCard, lockBoard] = [null, null, false]; }
     </script>
 </body>
 </html>
