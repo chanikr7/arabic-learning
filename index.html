@@ -72,14 +72,21 @@
             <button onclick="showSection('quizSection')" class="secondary" style="background-color: #ff9800;">אתגר 60 שניות</button>
             <button onclick="showSection('memorySection')" class="secondary" style="background-color: #9c27b0;">זיכרון</button>
         </div>
+        <div id="cloudStatus" class="hidden" style="margin-top: 15px; padding: 12px; background: #ffebee; color: #b71c1c; border-radius: 4px;"></div>
     </div>
     
     <div id="manageListsSection" class="section hidden">
         <h2>ניהול רשימות מילים (מסונכרן לענן)</h2>
         
         <div class="import-box">
-            <h3>📥 ייבוא מילים מקובץ מדרסה (JSON)</h3>
-            <input type="text" id="jsonListName" placeholder="בחר שם לרשימה החדשה">
+            <h3>➕ הוספת מילים ממילון מדרסה</h3>
+            <p>מוסיפים מילה לרשימה בלחיצה אחת, ישר מדף המילה במילון.</p>
+            <p><a href="bookmarklet-install.html">להתקנת הסימנייה</a></p>
+        </div>
+
+        <div class="import-box">
+            <h3>📥 ייבוא מילים מקובץ JSON</h3>
+            <input type="text" id="jsonListName" placeholder="שם הרשימה (חדשה או קיימת)">
             <input type="file" id="jsonFileInput" accept=".json">
             <button onclick="importJsonList()" style="width: 100%; margin-top: 10px;">ייבא נתונים לענן</button>
         </div>
@@ -101,7 +108,7 @@
         
         <div id="editListSection" class="hidden">
             <h3>עריכת רשימה: <span id="currentListName" style="color: #4CAF50;"></span></h3>
-            <p style="margin-bottom: 5px;">הכנס זוגות מילים בפורמט: עברית - ערבית - תעתיק</p>
+            <p style="margin-bottom: 5px;">הכנס זוגות מילים בפורמט: עברית - ערבית - תעתיק (עם רווח לפני ואחרי כל מקף)</p>
             <textarea id="wordListInput" placeholder="שָׁלוֹם - مرحبا - מַרְחַבַּא"></textarea>
             
             <div class="button-group">
@@ -175,77 +182,146 @@
 
         let wordLists = {};
         let currentListName = '';
-        let quizTimerInterval; 
-        
+        let editBaseline = '';   // תוכן תיבת העריכה כפי שנטען, כדי לזהות שינויים שלא נשמרו
+        let quizTimerInterval;
+
         window.onload = async function() {
-            await loadAllLists();
-            updateListSelectors();
+            await refreshLists();
         };
 
-        // --- פונקציות תקשורת עם Supabase ---
+        // כשחוזרים ללשונית (למשל אחרי הוספת מילה בסימנייה) מושכים שוב את הרשימות
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshLists();
+        });
 
-        async function loadAllLists() {
-            console.log("מושך נתונים מהענן...");
-            const { data, error } = await supabaseClient.from('word_lists').select('*');
-            if (error) {
-                console.error("שגיאה בטעינת נתונים מ-Supabase:", error);
-                return;
-            }
-            
-            wordLists = {};
-            data.forEach(row => {
-                wordLists[row.list_name] = row.words;
-            });
+        // --- פונקציות עזר ---
+
+        function esc(text) {
+            return String(text == null ? '' : text)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        async function saveAllLists() {
-            console.log("שומר נתונים לענן...");
-            const upsertData = Object.keys(wordLists).map(listName => {
-                return { list_name: listName, words: wordLists[listName] };
-            });
-
-            if (upsertData.length === 0) return; // אין מה לשמור
-
-            const { error } = await supabaseClient.from('word_lists').upsert(upsertData, { onConflict: 'list_name' });
-            if (error) {
-                console.error("שגיאה בשמירת נתונים:", error);
-                alert('הייתה שגיאה בשמירה לענן.');
+        function shuffle(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
             }
+            return arr;
+        }
+
+        // מפרק שורה ל: עברית | ערבית | תעתיק. המפריד הוא מקף עם רווחים משני צדיו,
+        // כדי שמקף בתוך מילה ("בית-ספר") לא ישבור את השורה.
+        function splitLine(line) {
+            let parts = line.split(/\s+-\s+/);
+            if (parts.length < 2) parts = line.split('-');
+            return parts.map(s => s.trim());
+        }
+
+        function parseWordPair(item) {
+            if (typeof item === 'object' && item !== null) return item;
+            if (typeof item === 'string') {
+                const parts = splitLine(item);
+                if (parts.length >= 2) return { hebrew: parts[0], arabic: parts[1], transliteration: parts[2] || '' };
+            }
+            return null;
+        }
+
+        function listWords(listName) {
+            return (wordLists[listName] || []).map(parseWordPair).filter(p => p && p.hebrew && p.arabic);
+        }
+
+        function wordsToText(listName) {
+            return listWords(listName)
+                .map(p => p.transliteration ? `${p.hebrew} - ${p.arabic} - ${p.transliteration}` : `${p.hebrew} - ${p.arabic}`)
+                .join('\n');
+        }
+
+        function setCloudStatus(message) {
+            const box = document.getElementById('cloudStatus');
+            box.textContent = message || '';
+            box.classList.toggle('hidden', !message);
+        }
+
+        // --- תקשורת עם Supabase ---
+
+        async function loadAllLists() {
+            const { data, error } = await supabaseClient.from('word_lists').select('*').order('list_name');
+            if (error) {
+                console.error('שגיאה בטעינת נתונים מ-Supabase:', error);
+                setCloudStatus('לא הצלחתי לטעון את הרשימות מהענן. בדקי את החיבור לאינטרנט, ואם זה חוזר – שמסד הנתונים ב-Supabase פעיל.');
+                return false;
+            }
+            setCloudStatus('');
+            wordLists = {};
+            data.forEach(row => {
+                wordLists[row.list_name] = Array.isArray(row.words) ? row.words : [];
+            });
+            return true;
+        }
+
+        // טוען מחדש מהענן ומעדכן את המסך, בלי לדרוס עריכה שלא נשמרה
+        async function refreshLists() {
+            if (!(await loadAllLists())) return;
+            updateListSelectors();
+
+            const editOpen = !document.getElementById('editListSection').classList.contains('hidden');
+            if (!editOpen || !currentListName) return;
+            const textarea = document.getElementById('wordListInput');
+            if (!wordLists[currentListName]) {
+                document.getElementById('editListSection').classList.add('hidden');
+                currentListName = '';
+            } else if (textarea.value === editBaseline) {
+                editBaseline = textarea.value = wordsToText(currentListName);
+            }
+        }
+
+        // שומר רשימה אחת בלבד, כדי לא לדרוס רשימות אחרות שהשתנו בינתיים בענן
+        async function saveList(listName) {
+            const { error } = await supabaseClient.from('word_lists')
+                .upsert([{ list_name: listName, words: wordLists[listName] }], { onConflict: 'list_name' });
+            if (error) {
+                console.error('שגיאה בשמירת נתונים:', error);
+                alert('הייתה שגיאה בשמירה לענן.');
+                return false;
+            }
+            return true;
         }
 
         async function deleteCurrentList() {
             if (!currentListName) return;
             if (confirm(`למחוק לחלוטין את "${currentListName}" מהענן?`)) {
                 const { error } = await supabaseClient.from('word_lists').delete().eq('list_name', currentListName);
-                
+
                 if (!error) {
                     delete wordLists[currentListName];
+                    currentListName = '';
                     updateListSelectors();
                     document.getElementById('editListSection').classList.add('hidden');
-                    currentListName = '';
                     alert('הרשימה נמחקה מהענן בהצלחה.');
                 } else {
-                    console.error("שגיאה במחיקה:", error);
+                    console.error('שגיאה במחיקה:', error);
                     alert('שגיאה במחיקת הרשימה.');
                 }
             }
         }
 
-        // --- שאר הפונקציות (עודכנו להיות אסינכרוניות כשצריך) ---
+        // --- ניהול רשימות ---
 
         function updateListSelectors() {
             const listNames = Object.keys(wordLists);
             const selectors = ['listSelector', 'flashcardListSelector', 'quizListSelector', 'memoryListSelector'];
-            
+
             selectors.forEach(selectorId => {
                 const selector = document.getElementById(selectorId);
+                const previous = selector.value;
                 selector.innerHTML = '<option value="">-- בחר רשימה --</option>';
                 listNames.forEach(name => {
                     const option = document.createElement('option');
                     option.value = name;
-                    option.textContent = name;
+                    option.textContent = `${name} (${listWords(name).length})`;
                     selector.appendChild(option);
                 });
+                if (wordLists[previous]) selector.value = previous;
             });
         }
 
@@ -254,34 +330,60 @@
             const sections = ['mainMenu', 'manageListsSection', 'flashcardsSection', 'quizSection', 'memorySection'];
             sections.forEach(id => document.getElementById(id).classList.add('hidden'));
             document.getElementById(sectionId).classList.remove('hidden');
-            
-            if(sectionId !== 'quizSection') {
-                document.getElementById('quizListSelector').value = "";
+
+            if (sectionId !== 'quizSection') {
+                document.getElementById('quizListSelector').value = '';
                 document.getElementById('quizGame').classList.add('hidden');
                 document.getElementById('quizListSelectorContainer').classList.remove('hidden');
             }
         }
 
-        async function importJsonList() {
+        function importJsonList() {
             const fileInput = document.getElementById('jsonFileInput');
             const nameInput = document.getElementById('jsonListName');
             const listName = nameInput.value.trim();
 
             if (!listName) return alert('אנא הכנס שם לרשימה');
-            if (wordLists[listName]) return alert('רשימה בשם זה כבר קיימת');
             if (!fileInput.files.length) return alert('אנא בחר/י קובץ JSON');
 
             const reader = new FileReader();
             reader.onload = async function(e) {
+                let data;
                 try {
-                    wordLists[listName] = JSON.parse(e.target.result); 
-                    await saveAllLists(); // ממתינים לשמירה מול Supabase
-                    updateListSelectors();
-                    alert('הרשימה יובאה בהצלחה ונשמרה בענן!');
-                    nameInput.value = ''; fileInput.value = '';
+                    data = JSON.parse(e.target.result);
                 } catch (error) {
-                    alert('שגיאה בקריאת הקובץ.');
+                    return alert('שגיאה בקריאת הקובץ.');
                 }
+
+                const words = (Array.isArray(data) ? data : []).map(parseWordPair)
+                    .filter(p => p && p.hebrew && p.arabic)
+                    .map(p => ({
+                        hebrew: String(p.hebrew).trim(),
+                        arabic: String(p.arabic).trim(),
+                        transliteration: String(p.transliteration || '').trim()
+                    }));
+                if (!words.length) return alert('לא נמצאו מילים בקובץ, או שהמבנה שלו לא מתאים.');
+
+                // מוסיפים לרשימה (קיימת או חדשה) ומדלגים על מילים שכבר נמצאות בה
+                const before = wordLists[listName];
+                const merged = listWords(listName);
+                let added = 0;
+                words.forEach(w => {
+                    if (!merged.some(m => m.hebrew === w.hebrew && m.arabic === w.arabic)) {
+                        merged.push(w);
+                        added++;
+                    }
+                });
+                wordLists[listName] = merged;
+
+                if (!(await saveList(listName))) {
+                    if (before) wordLists[listName] = before; else delete wordLists[listName];
+                    return;
+                }
+                updateListSelectors();
+                if (currentListName === listName) loadListForEditing();
+                nameInput.value = ''; fileInput.value = '';
+                alert(`נוספו ${added} מילים לרשימה "${listName}" ונשמרו בענן.`);
             };
             reader.readAsText(fileInput.files[0]);
         }
@@ -291,8 +393,11 @@
             const name = nameInput.value.trim();
             if (!name || wordLists[name]) return alert('שם לא חוקי או קיים');
             wordLists[name] = [];
-            await saveAllLists(); 
-            updateListSelectors(); 
+            if (!(await saveList(name))) {
+                delete wordLists[name];
+                return;
+            }
+            updateListSelectors();
             nameInput.value = '';
             document.getElementById('listSelector').value = name;
             loadListForEditing();
@@ -300,47 +405,47 @@
 
         function loadListForEditing() {
             const listName = document.getElementById('listSelector').value;
-            if (!listName) return document.getElementById('editListSection').classList.add('hidden');
+            if (!listName) {
+                currentListName = '';
+                return document.getElementById('editListSection').classList.add('hidden');
+            }
             currentListName = listName;
             document.getElementById('currentListName').textContent = listName;
             document.getElementById('editListSection').classList.remove('hidden');
-            
-            document.getElementById('wordListInput').value = wordLists[listName].map(item => {
-                if (typeof item === 'object') {
-                    return item.transliteration ? `${item.hebrew} - ${item.arabic} - ${item.transliteration}` : `${item.hebrew} - ${item.arabic}`;
-                }
-                return item; 
-            }).join('\n');
+            editBaseline = document.getElementById('wordListInput').value = wordsToText(listName);
         }
 
         async function saveWordList() {
             if (!currentListName) return;
-            const lines = document.getElementById('wordListInput').value.split('\n').filter(line => line.trim());
-            wordLists[currentListName] = lines.map(line => {
-                const parts = line.split('-').map(s => s.trim());
-                return { hebrew: parts[0]||'', arabic: parts[1]||'', transliteration: parts[2]||'' };
-            }).filter(item => item.hebrew && item.arabic);
-            
-            await saveAllLists(); 
+            const textarea = document.getElementById('wordListInput');
+            const before = wordLists[currentListName];
+            wordLists[currentListName] = textarea.value.split('\n').filter(line => line.trim())
+                .map(line => {
+                    const parts = splitLine(line);
+                    return { hebrew: parts[0] || '', arabic: parts[1] || '', transliteration: parts[2] || '' };
+                })
+                .filter(item => item.hebrew && item.arabic);
+
+            if (!(await saveList(currentListName))) {
+                wordLists[currentListName] = before;
+                return;
+            }
+            editBaseline = textarea.value;
+            updateListSelectors();
             alert('השינויים נשמרו בענן!');
         }
 
-        function parseWordPair(item) {
-            if (typeof item === 'object' && item !== null) return item;
-            if (typeof item === 'string') {
-                const parts = item.split('-').map(s => s.trim());
-                if (parts.length >= 2) return { hebrew: parts[0], arabic: parts[1], transliteration: parts[2]||'' };
-            }
-            return null;
-        }
-
-        /* --- לוגיקת משחקים --- */
+        /* --- כרטיסיות --- */
         let flashcardData = [], currentCardIndex = 0, isFlipped = false;
+
         function startFlashcards() {
             const listName = document.getElementById('flashcardListSelector').value;
             if (!listName) return document.getElementById('flashcardGame').classList.add('hidden');
-            flashcardData = wordLists[listName].map(parseWordPair).filter(p => p !== null);
-            if (!flashcardData.length) return alert('רשימה ריקה');
+            flashcardData = listWords(listName);
+            if (!flashcardData.length) {
+                document.getElementById('flashcardGame').classList.add('hidden');
+                return alert('רשימה ריקה');
+            }
             currentCardIndex = 0; isFlipped = false;
             document.getElementById('flashcardGame').classList.remove('hidden');
             document.getElementById('totalCards').textContent = flashcardData.length;
@@ -353,69 +458,77 @@
             document.getElementById('cardNumber').textContent = currentCardIndex + 1;
             const div = document.getElementById('flashcard');
             if (!isFlipped) {
-                div.innerHTML = `<span>${card.hebrew}</span>`;
+                div.innerHTML = `<span>${esc(card.hebrew)}</span>`;
             } else {
-                div.innerHTML = `<span>${card.arabic}</span>${card.transliteration ? `<div class="transliteration-text">${card.transliteration}</div>` : ''}`;
+                div.innerHTML = `<span>${esc(card.arabic)}</span>` +
+                    (card.transliteration ? `<div class="transliteration-text">${esc(card.transliteration)}</div>` : '');
             }
         }
 
         function flipCard() { isFlipped = !isFlipped; showCard(); }
         function nextCard() { currentCardIndex = (currentCardIndex + 1) % flashcardData.length; isFlipped = false; showCard(); }
         function previousCard() { currentCardIndex = (currentCardIndex - 1 + flashcardData.length) % flashcardData.length; isFlipped = false; showCard(); }
-        function shuffleCards() { flashcardData.sort(() => Math.random() - 0.5); currentCardIndex = 0; isFlipped = false; showCard(); }
+        function shuffleCards() { shuffle(flashcardData); currentCardIndex = 0; isFlipped = false; showCard(); }
 
+        /* --- אתגר 60 שניות --- */
         let quizData = [], currentQuizPair = null, score = 0, answered = false, timeLeft = 60;
-        
+
         function startQuiz() {
             const listName = document.getElementById('quizListSelector').value;
             if (!listName) return document.getElementById('quizGame').classList.add('hidden');
-            quizData = wordLists[listName].map(parseWordPair).filter(p => p !== null);
-            if (quizData.length < 2) return alert('צריך לפחות 2 זוגות מילים למשחק זה');
-            
-            score = 0; timeLeft = 60; answered = false;
+            quizData = listWords(listName);
+            // צריך לפחות שתי מילים עבריות שונות, אחרת אין תשובה שגויה להציע
+            if (new Set(quizData.map(p => p.hebrew)).size < 2) {
+                document.getElementById('quizListSelector').value = '';
+                return alert('צריך לפחות 2 זוגות מילים שונים למשחק זה');
+            }
+
+            score = 0;
+            timeLeft = 60;
+            answered = false;
+            currentQuizPair = null;
             if (quizTimerInterval) clearInterval(quizTimerInterval);
-            
+
             document.getElementById('score').textContent = score;
             document.getElementById('timeLeft').textContent = timeLeft;
             document.getElementById('quizGame').classList.remove('hidden');
-            document.getElementById('quizListSelectorContainer').classList.add('hidden'); 
-            
+            document.getElementById('quizListSelectorContainer').classList.add('hidden');
+
             quizTimerInterval = setInterval(() => {
                 timeLeft--;
                 document.getElementById('timeLeft').textContent = timeLeft;
                 if (timeLeft <= 0) endQuiz();
             }, 1000);
-            
+
             showNextQuizQuestion();
         }
 
         function showNextQuizQuestion() {
             if (timeLeft <= 0) return;
             answered = false;
-            currentQuizPair = quizData[Math.floor(Math.random() * quizData.length)];
-            
+
+            // מילה אקראית, אבל לא אותה מילה פעמיים ברצף
+            const previous = currentQuizPair;
+            do {
+                currentQuizPair = quizData[Math.floor(Math.random() * quizData.length)];
+            } while (quizData.length > 1 && currentQuizPair === previous);
+
             document.getElementById('quizWord').innerHTML = `
-                <div>${currentQuizPair.arabic}</div>
-                <div class="quiz-prompt-transliteration">${currentQuizPair.transliteration || ''}</div>
+                <div>${esc(currentQuizPair.arabic)}</div>
+                <div class="quiz-prompt-transliteration">${esc(currentQuizPair.transliteration)}</div>
             `;
-            
-            const wrongAnswers = [];
-            while (wrongAnswers.length < Math.min(3, quizData.length - 1)) {
-                const randomPair = quizData[Math.floor(Math.random() * quizData.length)];
-                if (randomPair.hebrew !== currentQuizPair.hebrew && !wrongAnswers.find(w => w.hebrew === randomPair.hebrew)) {
-                    wrongAnswers.push(randomPair);
-                }
-            }
-            
-            const allAnswers = [currentQuizPair, ...wrongAnswers].sort(() => Math.random() - 0.5);
+
+            // תשובות שגויות: מילים עבריות שונות מהנכונה, עד שלוש
+            const otherHebrew = [...new Set(quizData.map(p => p.hebrew))].filter(h => h !== currentQuizPair.hebrew);
+            const allAnswers = shuffle([currentQuizPair.hebrew, ...shuffle(otherHebrew).slice(0, 3)]);
+
             const optionsDiv = document.getElementById('quizOptions');
             optionsDiv.innerHTML = '';
-            
-            allAnswers.forEach(pair => {
+            allAnswers.forEach(hebrew => {
                 const button = document.createElement('button');
                 button.className = 'quiz-option';
-                button.textContent = pair.hebrew;
-                button.onclick = () => checkQuizAnswer(pair.hebrew, button);
+                button.textContent = hebrew;
+                button.onclick = () => checkQuizAnswer(hebrew, button);
                 optionsDiv.appendChild(button);
             });
         }
@@ -424,17 +537,23 @@
             if (answered) return;
             answered = true;
             const allButtons = document.querySelectorAll('.quiz-option');
-            
+
             if (selectedHebrew === currentQuizPair.hebrew) {
-                button.classList.add('correct'); 
-                score++; document.getElementById('score').textContent = score;
+                button.classList.add('correct');
+                score++;
+                document.getElementById('score').textContent = score;
             } else {
                 button.classList.add('wrong');
-                allButtons.forEach(btn => { if (btn.textContent === currentQuizPair.hebrew) btn.classList.add('correct'); });
+                allButtons.forEach(btn => {
+                    if (btn.textContent === currentQuizPair.hebrew) btn.classList.add('correct');
+                });
             }
-            
+
             allButtons.forEach(btn => btn.onclick = null);
-            setTimeout(() => { if (timeLeft > 0) showNextQuizQuestion(); }, 600);
+
+            setTimeout(() => {
+                if (timeLeft > 0) showNextQuizQuestion();
+            }, 600);
         }
 
         function endQuiz() {
@@ -445,63 +564,70 @@
                 <div style="font-size: 24px; color: #4CAF50; margin-top: 15px;">הניקוד הסופי שלך: ${score}</div>
             `;
             document.getElementById('quizOptions').innerHTML = '';
-            
+
             const restartBtn = document.createElement('button');
             restartBtn.textContent = 'שחק שוב';
             restartBtn.className = 'secondary';
-            restartBtn.style.gridColumn = "1 / -1"; 
+            restartBtn.style.gridColumn = '1 / -1';
             restartBtn.onclick = startQuiz;
-            
+
             const changeListBtn = document.createElement('button');
             changeListBtn.textContent = 'החלף רשימה';
-            changeListBtn.style.gridColumn = "1 / -1";
+            changeListBtn.style.gridColumn = '1 / -1';
             changeListBtn.onclick = () => {
+                document.getElementById('quizListSelector').value = '';
                 document.getElementById('quizGame').classList.add('hidden');
                 document.getElementById('quizListSelectorContainer').classList.remove('hidden');
             };
-            
+
             document.getElementById('quizOptions').appendChild(restartBtn);
             document.getElementById('quizOptions').appendChild(changeListBtn);
         }
 
+        /* --- זיכרון --- */
         let memoryCards = [], firstCard = null, secondCard = null, lockBoard = false, matchesFound = 0;
-        
+        let memoryRound = 0;   // מזהה סיבוב, כדי שטיימרים מסיבוב קודם לא ישפיעו על סיבוב חדש
+
         function startMemory() {
             const listName = document.getElementById('memoryListSelector').value;
             if (!listName) return document.getElementById('memoryGame').classList.add('hidden');
-            
-            let data = wordLists[listName].map(parseWordPair).filter(p => p !== null);
-            if (data.length < 2) return alert('צריך לפחות 2 זוגות למשחק');
-            
-            data.sort(() => Math.random() - 0.5);
-            data = data.slice(0, 8); 
-            
+
+            let data = listWords(listName);
+            if (data.length < 2) {
+                document.getElementById('memoryGame').classList.add('hidden');
+                return alert('צריך לפחות 2 זוגות למשחק');
+            }
+
+            data = shuffle(data).slice(0, 8);
+
+            memoryRound++;
+            resetBoard();
             matchesFound = 0;
             document.getElementById('memoryScore').textContent = '0';
             document.getElementById('memoryTotal').textContent = data.length;
             document.getElementById('memoryGame').classList.remove('hidden');
-            
+
             memoryCards = [];
             data.forEach((pair, index) => {
                 memoryCards.push({ id: index, type: 'hebrew', content: pair.hebrew });
                 memoryCards.push({ id: index, type: 'arabic', content: pair.arabic, trans: pair.transliteration });
             });
-            
-            memoryCards.sort(() => Math.random() - 0.5);
+
+            shuffle(memoryCards);
             renderMemoryBoard();
         }
 
         function renderMemoryBoard() {
             const board = document.getElementById('memoryBoard');
             board.innerHTML = '';
-            
+
             memoryCards.forEach((card, index) => {
                 const cardElement = document.createElement('div');
                 cardElement.className = 'memory-card';
                 cardElement.dataset.index = index;
-                
-                let backContent = card.type === 'hebrew' ? card.content : 
-                    `<div>${card.content}</div><div class="memory-transliteration">${card.trans || ''}</div>`;
+
+                const backContent = card.type === 'hebrew' ? esc(card.content) :
+                    `<div>${esc(card.content)}</div><div class="memory-transliteration">${esc(card.trans)}</div>`;
 
                 cardElement.innerHTML = `
                     <div class="memory-card-inner">
@@ -509,7 +635,7 @@
                         <div class="memory-card-back">${backContent}</div>
                     </div>
                 `;
-                
+
                 cardElement.addEventListener('click', flipMemoryCard);
                 board.appendChild(cardElement);
             });
@@ -520,7 +646,12 @@
             if (this === firstCard) return;
 
             this.classList.add('flipped');
-            if (!firstCard) { firstCard = this; return; }
+
+            if (!firstCard) {
+                firstCard = this;
+                return;
+            }
+
             secondCard = this;
             checkForMatch();
         }
@@ -533,35 +664,39 @@
         function disableCards() {
             firstCard.removeEventListener('click', flipMemoryCard);
             secondCard.removeEventListener('click', flipMemoryCard);
-            
-            const card1 = firstCard;
-            const card2 = secondCard;
-            
+
+            const card1 = firstCard, card2 = secondCard, round = memoryRound;
+
             setTimeout(() => {
+                if (round !== memoryRound) return;
                 card1.classList.add('matched');
                 card2.classList.add('matched');
-                
+
                 matchesFound++;
                 document.getElementById('memoryScore').textContent = matchesFound;
-                
+
                 if (matchesFound === memoryCards.length / 2) {
-                    setTimeout(() => alert('כל הכבוד! סיימת את משחק הזיכרון!'), 500);
+                    setTimeout(() => { if (round === memoryRound) alert('כל הכבוד! סיימת את משחק הזיכרון!'); }, 500);
                 }
-            }, 400); 
-            
+            }, 400);
+
             resetBoard();
         }
 
         function unflipCards() {
             lockBoard = true;
+            const card1 = firstCard, card2 = secondCard, round = memoryRound;
             setTimeout(() => {
-                firstCard.classList.remove('flipped');
-                secondCard.classList.remove('flipped');
+                if (round !== memoryRound) return;
+                card1.classList.remove('flipped');
+                card2.classList.remove('flipped');
                 resetBoard();
-            }, 1200); 
+            }, 1200);
         }
 
-        function resetBoard() { [firstCard, secondCard, lockBoard] = [null, null, false]; }
+        function resetBoard() {
+            [firstCard, secondCard, lockBoard] = [null, null, false];
+        }
     </script>
 </body>
 </html>
