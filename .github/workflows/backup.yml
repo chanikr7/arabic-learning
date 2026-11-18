@@ -1,0 +1,28 @@
+name: גיבוי רשימות מילים
+
+on:
+  schedule:
+    - cron: '0 3 * * 0,3'    # ימי ראשון ורביעי ב-03:00 UTC (בסביבות 5-6 בבוקר בישראל)
+  workflow_dispatch:          # מוסיף כפתור להרצה ידנית
+
+permissions:
+  contents: write             # מאפשר להרצה לשמור קבצים במאגר
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: הרצת הגיבוי
+        run: |
+          rm -rf backups/latest
+          python3 backup.py backups/latest
+
+      - name: שמירה במאגר אם משהו השתנה
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backups
+          git diff --cached --quiet || git commit -m "גיבוי רשימות מילים"
+          git push
